@@ -192,10 +192,16 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     
+    // Assets
+    const lootImg = new Image();
+    lootImg.src = "https://orcz.com/images/thumb/b/bf/FortniteBattleRoyaleSupplyDrops.jpg/400px-FortniteBattleRoyaleSupplyDrops.jpg";
+
     // Spelstatus
     let gameRunning = false;
     let particles = [];
     let projectiles = [];
+    let lootDrops = [];
+    let floatingTexts = [];
     
     // Canvas grootte instellen (HD)
     function resizeCanvas() {
@@ -215,6 +221,7 @@
             color: '#E1C699', // Pinda kleur
             secondaryColor: '#d32f2f', // Jules rood
             speed: 5,
+            baseSpeed: 5,
             vx: 0,
             vy: 0,
             hp: 100,
@@ -233,6 +240,7 @@
             color: '#E1C699',
             secondaryColor: '#1976D2', // Micha blauw
             speed: 5,
+            baseSpeed: 5,
             vx: 0,
             vy: 0,
             hp: 100,
@@ -269,6 +277,7 @@
         players.p1.hp = 100;
         players.p1.vx = 0;
         players.p1.vy = 0;
+        players.p1.speed = players.p1.baseSpeed;
         players.p1.direction = 1;
 
         players.p2.x = canvas.width - 160;
@@ -276,10 +285,13 @@
         players.p2.hp = 100;
         players.p2.vx = 0;
         players.p2.vy = 0;
+        players.p2.speed = players.p2.baseSpeed;
         players.p2.direction = -1;
 
         projectiles = [];
         particles = [];
+        lootDrops = [];
+        floatingTexts = [];
         
         updateHealthUI();
         
@@ -306,7 +318,50 @@
         startBtn.innerText = "NOG EEN KEER";
     }
 
+    function spawnLoot() {
+        const size = 50;
+        const targetY = Math.random() * (canvas.height - size - 50) + 25;
+        lootDrops.push({
+            x: Math.random() * (canvas.width - size - 50) + 25,
+            y: -100,
+            targetY: targetY,
+            width: size,
+            height: size,
+            vy: 3,
+            landed: false
+        });
+    }
+
+    function applyPowerUp(player) {
+        // Heal
+        player.hp = Math.min(player.hp + 30, 100);
+        updateHealthUI();
+        
+        // Speed Boost
+        player.speed = player.baseSpeed * 2;
+        
+        // Visuals
+        createParticles(player.x + player.width/2, player.y + player.height/2, '#00FF00');
+        floatingTexts.push({
+            x: player.x,
+            y: player.y - 20,
+            text: "POWER UP!",
+            life: 60,
+            color: "#00FF00"
+        });
+
+        // Reset speed after 5 seconds
+        setTimeout(() => {
+            player.speed = player.baseSpeed;
+        }, 5000);
+    }
+
     function updatePhysics() {
+        // Loot Spawning Logic (Approx every 10-15 seconds)
+        if (Math.random() < 0.0015) {
+            spawnLoot();
+        }
+
         [players.p1, players.p2].forEach(p => {
             // Beweging
             if (keysPressed[p.keys.left]) { p.vx = -p.speed; p.direction = -1; }
@@ -334,6 +389,35 @@
                 p.cooldown = 20; // vertraging tussen schoten
             }
         });
+
+        // Loot Drops Update
+        for (let i = lootDrops.length - 1; i >= 0; i--) {
+            let loot = lootDrops[i];
+            
+            // Falling
+            if (loot.y < loot.targetY) {
+                loot.y += loot.vy;
+            } else {
+                loot.landed = true;
+                // Gentle bobbing effect
+                loot.y = loot.targetY + Math.sin(Date.now() / 200) * 5;
+            }
+
+            // Collision with players
+            let collected = false;
+            [players.p1, players.p2].forEach(p => {
+                if (!collected &&
+                    p.x < loot.x + loot.width &&
+                    p.x + p.width > loot.x &&
+                    p.y < loot.y + loot.height &&
+                    p.y + p.height > loot.y
+                ) {
+                    applyPowerUp(p);
+                    lootDrops.splice(i, 1);
+                    collected = true;
+                }
+            });
+        }
 
         // Projectielen updaten
         for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -380,6 +464,14 @@
             part.life--;
             part.alpha -= 0.02;
             if (part.life <= 0) particles.splice(i, 1);
+        }
+
+        // Floating Text update
+        for (let i = floatingTexts.length - 1; i >= 0; i--) {
+            let ft = floatingTexts[i];
+            ft.y -= 1;
+            ft.life--;
+            if(ft.life <= 0) floatingTexts.splice(i, 1);
         }
     }
 
@@ -530,6 +622,23 @@
         ctx.ellipse(canvas.width/2, canvas.height/2 + 50, 300, 100, 0, 0, Math.PI*2);
         ctx.fill();
 
+        // Loot Drops
+        lootDrops.forEach(loot => {
+            // Schaduw onder loot
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath();
+            ctx.ellipse(loot.x + loot.width/2, loot.targetY + loot.height, loot.width/2, loot.height/4, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // Loot Image
+            ctx.drawImage(lootImg, loot.x, loot.y, loot.width, loot.height);
+            
+            // Glow effect
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(loot.x, loot.y, loot.width, loot.height);
+        });
+
         // Projectielen
         projectiles.forEach(p => {
             ctx.fillStyle = p.color;
@@ -553,6 +662,18 @@
             ctx.fillStyle = p.color;
             ctx.fillRect(p.x, p.y, 4, 4);
             ctx.globalAlpha = 1;
+        });
+
+        // Floating Texts
+        floatingTexts.forEach(ft => {
+            ctx.save();
+            ctx.fillStyle = ft.color;
+            ctx.font = "bold 20px Fredoka One";
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 3;
+            ctx.strokeText(ft.text, ft.x, ft.y);
+            ctx.fillText(ft.text, ft.x, ft.y);
+            ctx.restore();
         });
     }
 
